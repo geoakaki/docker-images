@@ -30,17 +30,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
+      # Build when this image's folder (or this workflow) changed in the pushed range. A manual run, the first push
+      # of a branch, or a base commit that is not in the history (force push) builds everything.
       - name: Changed?
         id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-             || git diff --name-only HEAD~1 HEAD | grep -qE '^(${{ matrix.image }}/|\.github/workflows/build\.yml)'; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "push" ] || [ -z "$BEFORE" ] \
+             || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            build=true
+          elif git diff --name-only "$BEFORE" "$AFTER" | grep -qE '^(${{ matrix.image }}/|\.github/workflows/build\.yml)'; then
+            build=true
           else
-            echo "build=false" >> "$GITHUB_OUTPUT"
+            build=false
           fi
+          echo "build=$build" | tee -a "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
         if: steps.changed.outputs.build == 'true'
